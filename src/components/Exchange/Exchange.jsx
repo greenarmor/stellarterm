@@ -73,6 +73,7 @@ export default class Exchange extends React.Component {
         document.removeEventListener('mozfullscreenchange', this._escExitFullscreen);
         document.removeEventListener('fullscreenchange', this._escExitFullscreen);
         document.removeEventListener('MSFullscreenChange', this._escExitFullscreen);
+        this.props.d.orderbook.closeOrderbookStream();
 
         if (this.state.fullscreenMode) {
             this.toggleFullScreen();
@@ -93,6 +94,7 @@ export default class Exchange extends React.Component {
 
     getChartSwitcherPanel() {
         const { chartType, fullscreenMode } = this.state;
+        const fullscreenHint = fullscreenMode ? 'Press F or esc to exit fullscreen' : 'Press F to enter fullscreen';
         const fullscreenBtn = fullscreenMode ? (
             <img src={images['icon-fullscreen-minimize']} alt="F" onClick={() => this.toggleFullScreen()} />
         ) : (
@@ -130,8 +132,20 @@ export default class Exchange extends React.Component {
                     </a>
                 </div>
                 <div className="fullscreen_Block">
-                    {!isMicrosoftBrowser ? downloadScreenshotBtn : null}
-                    {screenfull.enabled ? fullscreenBtn : null}
+                {!isMicrosoftBrowser ? (
+                        <div className="actionBtn">
+                            {downloadScreenshotBtn}
+                            <div className="btnHint">Take screenshot</div>
+                        </div>
+                    ) : null}
+                    {screenfull.enabled ? (
+                        <React.Fragment>
+                            <div className="actionBtn">
+                                {fullscreenBtn}
+                                <div className="btnHint">{fullscreenHint}</div>
+                            </div>
+                        </React.Fragment>
+                    ) : null}
                 </div>
             </div>
         );

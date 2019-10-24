@@ -1,13 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import moment from 'moment';
+import Debounce from 'awesome-debounce-promise';
 import Driver from '../../../lib/Driver';
 import images from '../../../images';
 
 import * as chartOptions from './LightweightChartOptions';
 import * as converterOHLC from './ConverterOHLC';
 import exportChartPng from './CanvasHandler';
-import Ellipsis from '../../Common/Ellipsis/Ellipsis';
 
 import {
     CrosshairMode,
@@ -40,7 +40,12 @@ export default class LightweightChart extends React.Component {
         this._mounted = true;
         this.getTrades(this.props.timeFrame);
         this.chartInit();
-        window.addEventListener('resize', this.applyChartOptions);
+        window.addEventListener('resize', Debounce(this.applyChartOptions, 150));
+        this.intervalId = setInterval(() => {
+            if (!this.state.isLoadingInit && !this.state.isLoadingNext) {
+                this.getLastTrade(this.props.timeFrame);
+            }
+        }, 10000);
     }
 
     shouldComponentUpdate() {
@@ -73,6 +78,7 @@ export default class LightweightChart extends React.Component {
         this._mounted = false;
         this.CHART.unsubscribeVisibleTimeRangeChange();
         window.removeEventListener('resize', this.applyChartOptions);
+        clearInterval(this.intervalId);
     }
 
     onClickTimeFrameBtn(timeFrame) {
@@ -83,13 +89,49 @@ export default class LightweightChart extends React.Component {
         }
     }
 
+    getLastTrade(timeFrame) {
+        const { data, handlers } = this.props.d.orderbook;
+
+        handlers.getTrades(timeFrame, 1).then((res) => {
+            const lastTrade = converterOHLC.aggregationToOhlc([...res.records], timeFrame);
+            const lastVolume = converterOHLC.getVolumeData(lastTrade, data);
+
+            const newTrades = this.state[timeFrame].trades.reverse();
+            const newVolumes = this.state[timeFrame].volumes.reverse();
+            // const dynamicTradeOffset = timeFrame >= converterOHLC.FRAME_DAY ? 0 : converterOHLC.TRADE_OFFSET;
+            // const lastCandleOffset = ((new Date().getTime() / 1000) + dynamicTradeOffset) - lastTrade[0].time;
+
+            // if (lastCandleOffset > timeFrame) {
+            //     newTrades.unshift(lastTrade);
+            //     newVolumes.unshift(lastVolume);
+            // }
+            // lastTrade[0].open = newTrades[0].close;
+
+            // console.log(newTrades[0].open)
+            // console.log(this.state[timeFrame].trades[0].open)
+            
+            newTrades[0] = lastTrade[0];
+            newVolumes[0] = lastVolume[0];
+
+            this.setState({
+                isLoadingInit: false,
+                [timeFrame]: {
+                    trades: newTrades,
+                    volumes: newVolumes,
+                    nextTrades: this.state[timeFrame].nextTrades,
+                    fullHistoryLoaded: this.state[timeFrame].fullHistoryLoaded,
+                },
+            });
+        });
+    }
+
     getTrades(timeFrame) {
         const { fullHistoryLoaded } = this.state[timeFrame];
         const { data, handlers } = this.props.d.orderbook;
 
         if (fullHistoryLoaded) { return; }
 
-        handlers.getTrades(timeFrame).then((res) => {
+        handlers.getTrades(timeFrame, 100).then((res) => {
             const fullLoaded = res.records.length === 0;
             const convertedTrades = converterOHLC.aggregationToOhlc([...res.records], timeFrame);
             const convertedVolume = converterOHLC.getVolumeData(convertedTrades, data);
@@ -195,6 +237,7 @@ export default class LightweightChart extends React.Component {
             }
             // Sets first visible trade, only for screenshot
             this.firstVisibleTrade = this.state[this.props.timeFrame].trades.find(trade => trade.time === param.to);
+            this.firstVisibleVolume = this.state[this.props.timeFrame].volumes.find(trade => trade.time === param.to);
         });
 
         this.setState({ chartInited: true });
@@ -206,7 +249,14 @@ export default class LightweightChart extends React.Component {
         const canvasScreenshot = this.CHART.takeScreenshot();
         const timeString = moment(new Date()).format('MM_DD_YYYY');
         const imageName = `StellarTerm-${pairName}_${timeString}`;
-        exportChartPng(canvasScreenshot, imageName, pairName, timeFrameInMin, this.firstVisibleTrade);
+        exportChartPng(
+            canvasScreenshot,
+            imageName,
+            pairName,
+            timeFrameInMin,
+            this.firstVisibleTrade,
+            this.firstVisibleVolume,
+        );
     }
 
     chartInit() {
@@ -247,16 +297,13 @@ export default class LightweightChart extends React.Component {
                         pairName={pairName} />
                 ) : null}
 
-                <div className={fullscreen ? 'chart_Msg_Container_fullscreen' : 'chart_Msg_Container'}>
+                <div className="chart_Msg_Container">
                     <div id="LightChart" style={isLoadingInit || noDataFounded ? { display: 'none' } : {}} />
                     {noDataFounded && !isLoadingInit ? (
                         <p className="chart_message">No trade history founded!</p>
                     ) : null}
                     {isLoadingInit ? (
-                        <p className="chart_message">
-                            Loading historical price data
-                            <Ellipsis />
-                        </p>
+                        <div className="nk-spinner" />
                     ) : null}
                 </div>
 
