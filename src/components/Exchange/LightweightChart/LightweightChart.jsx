@@ -12,7 +12,7 @@ import exportChartPng from './CanvasHandler';
 import {
     CrosshairMode,
     PriceScaleMode,
-} from '../../../../node_modules/lightweight-charts/dist/lightweight-charts.esm.production';
+} from '../../../../node_modules/lightweight-charts/dist/lightweight-charts.esm.development';
 import UtcTimeString from './UtcTimeString/UtcTimeString';
 import ChartDataPanel from './ChartDataPanel/ChartDataPanel';
 import FullscreenScrollBlock from './FullscreenScrollBlock/FullscreenScrollBlock';
@@ -45,7 +45,7 @@ export default class LightweightChart extends React.Component {
             if (!this.state.isLoadingInit && !this.state.isLoadingNext) {
                 this.getLastTrade(this.props.timeFrame);
             }
-        }, 10000);
+        }, 15000);
     }
 
     shouldComponentUpdate() {
@@ -96,28 +96,30 @@ export default class LightweightChart extends React.Component {
             const lastTrade = converterOHLC.aggregationToOhlc([...res.records], timeFrame);
             const lastVolume = converterOHLC.getVolumeData(lastTrade, data);
 
-            const newTrades = this.state[timeFrame].trades.reverse();
-            const newVolumes = this.state[timeFrame].volumes.reverse();
-            // const dynamicTradeOffset = timeFrame >= converterOHLC.FRAME_DAY ? 0 : converterOHLC.TRADE_OFFSET;
-            // const lastCandleOffset = ((new Date().getTime() / 1000) + dynamicTradeOffset) - lastTrade[0].time;
+            const lastCandle = this.state[timeFrame].trades[this.state[timeFrame].trades.length - 1];
 
-            // if (lastCandleOffset > timeFrame) {
-            //     newTrades.unshift(lastTrade);
-            //     newVolumes.unshift(lastVolume);
-            // }
-            // lastTrade[0].open = newTrades[0].close;
+            let trades = this.state[timeFrame].trades;
+            let volumes = this.state[timeFrame].volumes;
+            const dynamicTradeOffset = timeFrame >= converterOHLC.FRAME_DAY ? 0 : converterOHLC.TRADE_OFFSET;
 
-            // console.log(newTrades[0].open)
-            // console.log(this.state[timeFrame].trades[0].open)
-            
-            newTrades[0] = lastTrade[0];
-            newVolumes[0] = lastVolume[0];
+            const lastCandleOffset = ((new Date().getTime() / 1000) + dynamicTradeOffset) - lastTrade[0].time;
+            const lastStateCandleOffset = ((new Date().getTime() / 1000) + dynamicTradeOffset) - lastCandle.time;
+
+            if (lastCandleOffset < timeFrame) {
+                console.log('new pop')
+                lastTrade[0].open = trades[trades.length - 2].close;
+                trades[trades.length - 1] = lastTrade[0];
+                volumes[volumes.length - 1] = lastVolume[0];
+            } else if (lastStateCandleOffset > timeFrame) {
+                trades = [...trades, ...converterOHLC.fillFromLastTrade(lastStateCandleOffset, timeFrame, lastCandle)];
+                volumes = [...volumes, ...converterOHLC.getVolumeData(trades, data)];
+            }
 
             this.setState({
                 isLoadingInit: false,
                 [timeFrame]: {
-                    trades: newTrades,
-                    volumes: newVolumes,
+                    trades,
+                    volumes,
                     nextTrades: this.state[timeFrame].nextTrades,
                     fullHistoryLoaded: this.state[timeFrame].fullHistoryLoaded,
                 },
@@ -146,13 +148,14 @@ export default class LightweightChart extends React.Component {
                     },
                 });
             }
+            this.getLastTrade(this.props.timeFrame);
         });
     }
 
     getNextTrades() {
         const { timeFrame, d } = this.props;
         const { fullHistoryLoaded } = this.state[timeFrame];
-
+        console.log('nexttrades')
         if (fullHistoryLoaded) { return; }
 
         this.setState({ isLoadingNext: true });
